@@ -1,4 +1,4 @@
-FROM ubuntu:focal
+FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Configure local ubuntu mirror as package source
@@ -11,6 +11,7 @@ RUN \
   apt-get update -y && \
   apt-get upgrade -y && \
   apt-get install -y --no-install-recommends \
+    vim \
     ca-certificates \
     libtinfo5 \
     locales \
@@ -20,6 +21,7 @@ RUN \
     pigz \
     unzip \
     wget \
+    libx11-dev \
     && \
   apt-get autoclean && \
   apt-get autoremove && \
@@ -37,36 +39,44 @@ ARG DISPENSE_BASE_URL="https://dispense.es.net/Linux/xilinx"
 
 # Install the Xilinx Vivado tools and updates in headless mode
 # ENV var to help users to find the version of vivado that has been installed in this container
-ENV VIVADO_VERSION=2023.2
+# ENV VIVADO_VERSION=2023.2
+ENV VIVADO_VERSION=2018.3
 # Xilinx installer tar file originally from: https://www.xilinx.com/support/download.html
-ARG VIVADO_INSTALLER="FPGAs_AdaptiveSoCs_Unified_${VIVADO_VERSION}_1013_2256.tar.gz"
-ARG VIVADO_UPDATE="Vivado_Vitis_Update_2023.2.2_0209_0950.tar.gz"
+# ARG VIVADO_INSTALLER="FPGAs_AdaptiveSoCs_Unified_${VIVADO_VERSION}_1013_2256.tar.gz"
+ARG VIVADO_INSTALLER="Xilinx_Vivado_SDK_2018.3_1207_2324.tar.gz"
+ARG VIVADO_UPDATE="Xilinx_Vivado_SDx_Update_2018.3.1_0326_0329.tar.gz"
 # Installer config file
-ARG VIVADO_INSTALLER_CONFIG="/vivado-installer/install_config_vivado.${VIVADO_VERSION}.txt"
+ARG VIVADO_INSTALLER_CONFIG="/vivado-installer/install_config_main.txt"
+ARG VIVADO_UPDATE_CONFIG="/vivado-installer/install_config_up1.txt"
 
-COPY vivado-installer/ /vivado-installer/
+COPY ./vivado-installer/ /vivado-installer/
 RUN \
-  mkdir -p /vivado-installer/install && \
-  ( \
+  mkdir -p /vivado-installer/install
+## RUN install SDK
+RUN \
     if [ -e /vivado-installer/$VIVADO_INSTALLER ] ; then \
-      pigz -dc /vivado-installer/$VIVADO_INSTALLER | tar xa --strip-components=1 -C /vivado-installer/install ; \
+      echo "Vivado alrady downloaded" && \
+      tar --strip-components=1 -xf /vivado-installer/$VIVADO_INSTALLER -C /vivado-installer/install ; \
     else \
-      wget -qO- $DISPENSE_BASE_URL/$VIVADO_INSTALLER | pigz -dc | tar xa --strip-components=1 -C /vivado-installer/install ; \
-    fi \
-  ) && \
+      echo "Downloading Vivado install from AMD" && \
+      echo "https://account.amd.com/en/forms/downloads/xef-vivado.html?filename=Xilinx_Vivado_SDK_2018.3_1207_2324.tar.gz" && \
+      exit 1 ; \
+    fi
+# Create installer config
+# Fails to select ERROR: Please enter a number corresponding to the edition you would like to install.
+RUN \
   if [ ! -e ${VIVADO_INSTALLER_CONFIG} ] ; then \
     /vivado-installer/install/xsetup \
-      -p 'Vivado' \
-      -e 'Vivado ML Enterprise' \
+      -x \
       -b ConfigGen && \
     echo "No installer configuration file was provided.  Generating a default one for you to modify." && \
     echo "-------------" && \
-    cat /root/.Xilinx/install_config.txt && \
-    echo "-------------" && \
     exit 1 ; \
-  fi ; \
+  fi ;
+# install Vivado and Update
+RUN \
   /vivado-installer/install/xsetup \
-    --agree 3rdPartyEULA,XilinxEULA \
+    --agree 3rdPartyEULA,WebTalkTerms,XilinxEULA \
     --batch Install \
     --config ${VIVADO_INSTALLER_CONFIG} && \
   rm -r /vivado-installer/install && \
@@ -74,67 +84,23 @@ RUN \
   if [ ! -z "$VIVADO_UPDATE" ] ; then \
     ( \
       if [ -e /vivado-installer/$VIVADO_UPDATE ] ; then \
-        pigz -dc /vivado-installer/$VIVADO_UPDATE | tar xa --strip-components=1 -C /vivado-installer/update ; \
+        tar --strip-components=1 -xf /vivado-installer/$VIVADO_UPDATE -C /vivado-installer/update ; \
       else \
-        wget -qO- $DISPENSE_BASE_URL/$VIVADO_UPDATE | pigz -dc | tar xa --strip-components=1 -C /vivado-installer/update ; \
+        echo "Downloading Vivado UPDATE from AMD" && \
+        echo "https://account.amd.com/en/forms/downloads/xef-vivado.html?filename=Xilinx_Vivado_SDx_Update_2018.3.1_0326_0329.tar.gz" && \
+        exit 1 ; \
       fi \
     ) && \
     /vivado-installer/update/xsetup \
-      --agree 3rdPartyEULA,XilinxEULA \
-      --batch Update \
-      --config ${VIVADO_INSTALLER_CONFIG} && \
+    --agree 3rdPartyEULA,WebTalkTerms,XilinxEULA \
+    --batch Install \
+    --config ${VIVADO_UPDATE_CONFIG} && \
     rm -r /vivado-installer/update && \
     rm -rf /vivado-installer ; \
-  fi
-
-# ONLY REQUIRED FOR Ubuntu 20.04 (focal) but harmless on other distros
-# Hack: replace the stock libudev1 with a newer one from Ubuntu 22.04 (jammy) to avoid segfaults when invoked
-#       from the flexlm license code within Vivado
-RUN \
-  if [ "$(lsb_release --short --release)" = "20.04" ] ; then \
-    wget -q -P /tmp http://linux.mirrors.es.net/ubuntu/pool/main/s/systemd/libudev1_249.11-0ubuntu3_amd64.deb && \
-    dpkg-deb --fsys-tarfile /tmp/libudev1_*.deb | \
-      tar -C /tools/Xilinx/Vivado/${VIVADO_VERSION}/lib/lnx64.o/Ubuntu/20 --strip-components=4 -xavf - ./usr/lib/x86_64-linux-gnu/ && \
-    rm /tmp/libudev1_*.deb ; \
-  fi
-
-# Hack: Install libssl 1.1.1 package from Ubuntu 20.04 (focal) since it is transitively required by the p4bm-vitisnet
-#       executable and is not properly vendored by the Xilinx runtime environment.
-#
-# Ubuntu 20.04/focal  provides libssl 1.1
-# Ubuntu 22.04/jammy  provides libssl 3.3
-#
-# p4bm-vitisnet is dynamically linked against
-#   libthrift-0.11.0.so  (now vendored properly in 22.04)
-#     libssl.so.1.1      (not vendored, pull the old version from Ubuntu 20.04)
-#     libcrypto.so.1.1   (not vendored, pull the old version from Ubuntu 20.04)
-#
-# The libssl .deb package provides both libssl and libcrypto.
-#
-# This is a sketchy hack to grab a deb from a different Ubuntu release by reaching directly into the package mirror's
-# pool and grabbing the .deb directly.  This is how we'll deal with it until Xilinx fixes this issue (again).
-
-RUN \
-  if [ "$(lsb_release --short --release)" = "22.04" ] ; then \
-    wget -q -P /tmp http://linux.mirrors.es.net/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb && \
-    dpkg-deb --fsys-tarfile /tmp/libssl1.*.deb | \
-      tar -C /tools/Xilinx/Vivado/${VIVADO_VERSION}/lib/lnx64.o/Ubuntu/22 --strip-components=4 -xavf - ./usr/lib/x86_64-linux-gnu/ && \
-    rm /tmp/libssl1.*.deb ; \
-  fi
-
-# Apply post-install patches to fix issues found on each OS release
-# Common patches
-#   * Disable workaround for X11 XSupportsLocale bug.  This workaround triggers additional requirements on the host
-#     to have an entire suite of X11 related libraries installed even though we only use vivado in batch/tcl mode.
-#     See: https://support.xilinx.com/s/article/62553?language=en_US
-COPY patches/ /patches
-RUN \
-  if [ -e "/patches/ubuntu-$(lsb_release --short --release)-vivado-${VIVADO_VERSION}-postinstall.patch" ] ; then \
-    patch -p 1 < /patches/ubuntu-$(lsb_release --short --release)-vivado-${VIVADO_VERSION}-postinstall.patch ; \
-  fi ; \
-  if [ -e "/patches/vivado-${VIVADO_VERSION}-postinstall.patch" ] ; then \
-    patch -p 1 < /patches/vivado-${VIVADO_VERSION}-postinstall.patch ; \
-  fi
+    else \
+      echo "You can download SDx to have latest update from:" && \
+      echo "https://account.amd.com/en/forms/downloads/xef-vivado.html?filename=Xilinx_Vivado_SDx_Update_2018.3.1_0326_0329.tar.gz" && \
+    fi
 
 # Install specific packages required by esnet-smartnic build
 RUN \
@@ -170,8 +136,7 @@ RUN \
   apt-get autoremove && \
   rm -rf /var/lib/apt/lists/*
 
-# Set up the container to pre-source the vivado environment
-COPY ./entrypoint.sh /entrypoint.sh
-ENTRYPOINT [ "/entrypoint.sh" ]
-
-CMD ["/bin/bash", "-l"]
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/bin/bash", "-c", "source /opt/Xilinx/Vivado/${VIVADO_VERSION}/settings64.sh;/bin/bash -l"]
