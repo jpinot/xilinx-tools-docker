@@ -34,13 +34,10 @@ at smartnic@es.net.
 Download the Xilinx Vivado Installer
 ------------------------------------
 
-* Open a web browser to this page: https://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/vivado-design-tools/2023-2.html
-* Under the `Vivado ML Edition - 2023.2  Full Product Installation` section
-  * Download `AMD Unified Installer for FPGAs & Adaptive SoCs 2023.2 SFD`
-  * Save the file as exactly: `FPGAs_AdaptiveSoCs_Unified_2023.2_1013_2256.tar.gz`
-+* Under the `Vivado ML Edition Update 2 - 2023.2  Product Update` section
-+  * Download `AMD Unified Installer for FPGAs & Adaptive SoCs 2023.2.2`
+* Download `https://account.amd.com/en/forms/downloads/xef-vivado.html?filename=Xilinx_Vivado_SDK_2018.3_1207_2324.tar.gz`
+* Download `https://account.amd.com/en/forms/downloads/xef-vivado.html?filename=Xilinx_Vivado_SDx_Update_2018.3.1_0326_0329.tar.gz`
 * Move the files into the `vivado-installer` directory in this repo
+
 
 ```
 $ tree
@@ -52,9 +49,10 @@ $ tree
 │   └── vivado-2023.2-postinstall.patch
 ├── README.md
 └── vivado-installer
-    ├── install_config_vivado.2023.2.txt
-    ├── FPGAs_AdaptiveSoCs_Unified_2023.2_1013_2256.tar.gz   <--------- put the base installer here
-    └── Vivado_Vitis_Update_2023.2.2_0209_0950.tar.gz        <--------- put the update installer here
+    ├── install_config_main.txt
+    ├── install_config_up1.txt
+    ├── Xilinx_Vivado_SDK_2018.3_1207_2324.tar.gz            <--------- put the base installer here
+    └── Xilinx_Vivado_SDx_Update_2018.3.1_0326_0329.tar.gz   <--------- put the update installer here
 ```
 
 Building the xilinx-tools-docker container
